@@ -1,0 +1,99 @@
+name: site-uptime
+
+# 每 15 分钟探一次线上站点；失败开 issue，恢复后自动关闭。
+# 注意：GitHub 的定时任务不准时（高峰常延迟 5~20 分钟），对个人站够用。
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 探测页面
+        id: probe
+        run: |
+          set +e
+          : > /tmp/fail.txt
+          for path in "/" "/case-rag.html" "/case-agent.html" "/case-lora.html" "/case-quiz.html" "/case-booking.html" "/sitemap.xml"; do
+            code="000"
+            for i in 1 2 3; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://www.suweizhao.com${path}")
+              if [ "$code" = "200" ]; then break; fi
+              sleep 8
+            done
+            if [ "$code" != "200" ]; then
+              echo "${path} → HTTP ${code}" >> /tmp/fail.txt
+            fi
+          done
+          if [ -s /tmp/fail.txt ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "探测失败："
+            cat /tmp/fail.txt
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "全部 200"
+          fi
+
+      - name: 失败时开 issue
+        if: steps.probe.outputs.ok == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "探测时间（UTC）：$(date -u '+%F %T')"
+            echo
+            echo "以下地址没有返回 200（每个已重试 3 次）："
+            echo
+            echo '```'
+            cat /tmp/fail.txt
+            echo '```'
+            echo
+            echo "站点：https://www.suweizhao.com"
+            echo
+            echo "排查顺序：nginx 是否在跑 → 证书是否过期 → 磁盘是否写满。"
+          } > /tmp/body.md
+          num=$(gh issue list --state open --search '"[uptime]" in:title' --json number --jq '.[0].number // empty')
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file /tmp/body.md
+          else
+            gh issue create --title "[uptime] 站点不可用" --body-file /tmp/body.md
+          fi
+
+      - name: 恢复后关闭 issue
+        if: steps.probe.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          num=$(gh issue list --state open --search '"[uptime]" in:title' --json number --jq '.[0].number // empty')
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body "已恢复。$(date -u '+%F %T') UTC 的探测全部返回 200。"
+            gh issue close "$num" --reason completed
+          fi
+
+      - name: 心跳提交
+        run: |
+          last=$(cat .heartbeat 2>/dev/null || echo 0)
+          now=$(date -u +%s)
+          if [ "$last" -eq 0 ] || [ $((now - last)) -gt $((30 * 86400)) ]; then
+            date -u +%s > .heartbeat
+            git config user.name "site-uptime-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .heartbeat
+            git commit -m "heartbeat: $(date -u +%F)"
+            git push
+          else
+            echo "心跳还新鲜（$(( (30 * 86400 - (now - last)) / 86400 )) 天后才提交）"
+          fi
