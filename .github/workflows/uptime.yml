@@ -5,6 +5,12 @@ name: site-uptime
 on:
   schedule:
     - cron: '*/15 * * * *'
+  # 改 workflow 本身时立刻跑一次，省得等下一个 15 分钟窗口。
+  # 忽略心跳文件，避免「心跳提交 -> 触发 workflow -> 再提交」的循环。
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.heartbeat'
   workflow_dispatch:
 
 permissions:
