@@ -35,7 +35,7 @@ jobs:
         run: |
           set +e
           : > /tmp/fail.txt
-          for path in "/" "/case-rag.html" "/case-agent.html" "/case-lora.html" "/case-quiz.html" "/case-booking.html" "/sitemap.xml" "/__uptime_selftest__"; do
+          for path in "/" "/case-rag.html" "/case-agent.html" "/case-lora.html" "/case-quiz.html" "/case-booking.html" "/sitemap.xml"; do
             code="000"
             for i in 1 2 3; do
               code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://www.suweizhao.com${path}")
