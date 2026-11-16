@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   probe:
+    # 只在本仓库跑。别人 fork 走这个仓库并启用 Actions 时，定时任务不会在副本里执行。
+    if: github.repository == 'stevenfight/site-uptime'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
